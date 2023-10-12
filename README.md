@@ -1,4 +1,4 @@
-# Redem And Subscribe System
+# Fight Ban System For Fivem
 Creating a "fightban" command in FiveM using Lua involves several steps, from command parsing to database operations for SQL and then finally implementing the functionality for disabling weapons. Below is a simplified example that outlines how this might be done.
 
 Firstly, make sure you have set up an SQL database to store banned players and their unban timestamps.
