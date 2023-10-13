@@ -1,51 +1,49 @@
--- Register the admin-only "fightban" command
-RegisterCommand("fightban", function(source, args, rawCommand)
-    local target = tonumber(args[1])
-    local time = tonumber(args[2]) -- time in minutes
+local fightBanned = {}
 
-    if target and time then
-        -- Store the ban info into the database and disable the weapon
-        banAndDisableWeapon(target, time)
-    else
-        print("Usage: /fightban [player id] [time in minutes]")
+RegisterCommand("fightban", function(source, args, rawCommand)
+    local targetSrc = args[1]
+    local time = tonumber(args[2])
+
+    if targetSrc and time then
+        local steamIdentifier = GetPlayerIdentifier(targetSrc, 0)
+        local tokenCount = GetNumPlayerTokens(targetSrc)
+        
+        local combinedIdentifier = steamIdentifier
+        
+        if tokenCount > 0 then
+            local token = GetPlayerToken(targetSrc, 0)
+            combinedIdentifier = steamIdentifier .. "_" .. token
+        end
+
+        local expireTime = os.time() + (time * 60)
+        fightBanned[combinedIdentifier] = expireTime
+
+         MySQL.Async.execute("INSERT INTO fight_ban (identifier, expire_time) VALUES (@identifier, @expire_time)", {
+             ['@identifier'] = combinedIdentifier,
+             ['@expire_time'] = expireTime
+         })
+        
+        TriggerClientEvent('fightBanStatus', targetSrc, true, time)
     end
 end, true)
 
--- Function to store the ban into the database and disable the weapon
-function banAndDisableWeapon(target, time)
-    local expireTime = os.time() + (time * 60) -- convert minutes to seconds
+AddEventHandler('playerConnecting', function(name, setKickReason, deferrals)
+    local source = source
+    local steamIdentifier = GetPlayerIdentifier(source, 0)
+    local tokenCount = GetNumPlayerTokens(source)
+    
+    local combinedIdentifier = steamIdentifier
 
-    -- Assuming MySQL-Async is being used
-    MySQL.Async.execute("INSERT INTO fightbans (player_id, expire_time) VALUES (@player_id, @expire_time)",
-    {
-        ['@player_id'] = target,
-        ['@expire_time'] = expireTime
-    }, function(rowsChanged)
-        if rowsChanged > 0 then
-            -- Disable weapon for the target player
-            TriggerClientEvent('disableWeapon', target, time)
-        end
-    end)
-end
-
--- Function to check for expired bans (optional)
-function checkForExpiredBans()
+    if tokenCount > 0 then
+        local token = GetPlayerToken(source, 0)
+        combinedIdentifier = steamIdentifier .. "_" .. token
+    end
+    
     local currentTime = os.time()
 
-    MySQL.Async.fetchAll("SELECT * FROM fightbans WHERE expire_time <= @current_time", 
-    {
-        ['@current_time'] = currentTime
-    }, function(results)
-        for _, result in ipairs(results) do
-            MySQL.Async.execute("DELETE FROM fightbans WHERE id = @id", { ['@id'] = result.id })
-        end
-    end)
-end
-
--- You can run the above function at an interval if you want
--- Citizen.CreateThread(function()
---     while true do
---         Citizen.Wait(60000) -- every minute
---         checkForExpiredBans()
---     end
--- end)
+    if fightBanned[combinedIdentifier] and fightBanned[combinedIdentifier] > currentTime then
+        TriggerClientEvent('fightBanStatus', source, true, fightBanned[combinedIdentifier] - currentTime)
+    else
+        TriggerClientEvent('fightBanStatus', source, false)
+    end
+end)
